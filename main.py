@@ -12,6 +12,7 @@ from collections import defaultdict
 from config import *
 from models import ChatMessage, UserInfo, WebSocketMessage
 from utils import setup_logger, log_connection_event, log_message_event
+from crypto_utils import chat_crypto
 
 # Configurar logging
 logger = setup_logger("chat_backend")
@@ -29,6 +30,7 @@ app.add_middleware(
         "http://localhost:3000", 
         "http://127.0.0.1:3000",
         "http://192.168.*:3000",  # Red local
+        "http://192.168.19.1:3000",  # IP específica del usuario
         "*"  # Para desarrollo - en producción usar IPs específicas
     ],
     allow_credentials=True,
@@ -67,18 +69,19 @@ class ConnectionManager:
         # Claves públicas de usuarios: {user_id: public_key}
         self.user_public_keys: Dict[str, str] = {}
         
+        # *** SISTEMA DE CIFRADO E2EE MEJORADO ***
+        self.crypto = chat_crypto
+        # Clave del chat público (se genera al inicio)
+        self.public_chat_key: str = None
+        
         # Generar clave para chat público al inicializar
         self.generate_public_chat_key()
     
     def generate_public_chat_key(self):
         """Generar una clave temporal para el chat público"""
-        import secrets
-        import base64
-        
-        # Generar 32 bytes aleatorios (256 bits) para AES-256
-        key_bytes = secrets.token_bytes(32)
-        self.public_chat_key = base64.b64encode(key_bytes).decode('utf-8')
-        logger.info("🔐 Clave del chat público generada")
+        self.public_chat_key = self.crypto.generate_key()
+        self.crypto.set_public_chat_key(self.public_chat_key)
+        logger.info("🔐 Clave del chat público generada con cifrado mejorado")
         # Códigos de invitación: {invite_code: room_id}
         self.invite_codes: Dict[str, str] = {}
     
@@ -563,7 +566,7 @@ class ConnectionManager:
                 "room_id": room_id
             }, exclude=websocket)
             
-            # Actualizar lista de usuarios en la sala
+            # Update user list in the room
             await self.broadcast_room_user_list(room_id)
             
             return True
@@ -590,7 +593,7 @@ class ConnectionManager:
                     "timestamp": datetime.now().isoformat()
                 })
                 
-                # Actualizar lista de usuarios
+                # Update user list
                 await self.broadcast_room_user_list(room_id)
             
             # Si la sala está vacía, eliminarla
@@ -785,18 +788,25 @@ class ConnectionManager:
         if self._is_user_banned(user_id) or self._is_rate_limited(user_id):
             return False
 
-        # Procesar mensaje cifrado o texto plano
-        if encrypted_data:
-            display_message = "[Mensaje cifrado]"
-            message_content = None
-        else:
-            if not message or not message.strip():
-                return False
+        decrypted_message = None
+        display_message = "[Mensaje cifrado]"
+        
+        if encrypted_data and self.crypto.verify_encrypted_data(encrypted_data):
+            # Intentar descifrar usando la clave de la sala
+            decrypted_message = self.crypto.decrypt_message(encrypted_data, room_id)
+            if decrypted_message:
+                display_message = f"[Cifrado sala: {len(decrypted_message)} chars]"
+                logger.info(f"✅ Mensaje de sala {room_id} cifrado validado")
+            else:
+                logger.warning(f"⚠️ No se pudo descifrar mensaje de sala {room_id}")
+        elif message and message.strip():
             sanitized_message = self._sanitize_message(message)
             if not sanitized_message:
                 return False
             display_message = sanitized_message
-            message_content = sanitized_message
+            decrypted_message = sanitized_message
+        else:
+            return False
 
         # Registrar tiempo del mensaje
         self.user_message_times[user_id].append(datetime.now())
@@ -812,13 +822,11 @@ class ConnectionManager:
             "color": sender_info["color"]
         }
 
-        # Agregar datos cifrados o mensaje en texto plano (pero no ambos)
-        if encrypted_data:
+        if encrypted_data and self.crypto.verify_encrypted_data(encrypted_data):
             chat_message["encrypted"] = encrypted_data
-            # No incluir campo "message" para mensajes cifrados
+            chat_message["type"] = "room_message_encrypted"
         else:
-            chat_message["message"] = message_content
-            # No incluir campo "encrypted" para mensajes en texto plano
+            chat_message["message"] = decrypted_message
 
         # Guardar en historial de la sala
         history_entry = chat_message.copy()

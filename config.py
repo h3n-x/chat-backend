@@ -6,7 +6,7 @@ MESSAGE_HISTORY_LIMIT = 100
 PING_INTERVAL = 30  # segundos
 
 # Configuración del servidor
-HOST = "0.0.0.0"
+HOST = "localhost"
 PORT = 8000
 DEBUG = True
 
