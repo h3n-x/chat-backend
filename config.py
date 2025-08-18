@@ -1,4 +1,6 @@
 # Configuración del chat
+import os
+
 MAX_MESSAGE_LENGTH = 500
 MAX_USERNAME_LENGTH = 30
 MAX_CONNECTIONS = 100
@@ -6,9 +8,9 @@ MESSAGE_HISTORY_LIMIT = 100
 PING_INTERVAL = 30  # segundos
 
 # Configuración del servidor
-HOST = "localhost"
-PORT = 8000
-DEBUG = True
+HOST = os.getenv("HOST", "localhost")
+PORT = int(os.getenv("PORT", 8000))
+DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
 # Colores disponibles para usuarios
 USER_COLORS = [

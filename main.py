@@ -23,15 +23,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS para desarrollo (permitir múltiples dispositivos)
+# Configurar CORS para desarrollo y producción
+import os
+
+# Obtener orígenes permitidos de variables de entorno
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://write-ghost.netlify.app").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
+    allow_origins=CORS_ORIGINS + [
         "http://localhost:3000", 
         "http://127.0.0.1:3000",
         "http://192.168.*:3000",  # Red local
         "http://192.168.19.1:3000",  # IP específica del usuario
-        "*"  # Para desarrollo - en producción usar IPs específicas
+        "https://write-ghost.netlify.app",  # Tu dominio de Netlify
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
