@@ -1,57 +1,197 @@
-# Chat Anónimo - Backend
+<div align="center">
 
-Backend en Python para una aplicación de chat anónimo en tiempo real usando WebSockets.
+# 🚀 Chat Anónimo - Backend
 
-## Características
+![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socketdotio&logoColor=white)
+![Encryption](https://img.shields.io/badge/AES_256-FF6B6B?style=for-the-badge&logo=lock&logoColor=white)
+![Deploy](https://img.shields.io/badge/Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)
 
-- ✅ Chat en tiempo real con WebSockets
-- ✅ Usuarios anónimos con nombres auto-generados
-- ✅ Colores únicos para cada usuario
-- ✅ Historial de mensajes (últimos 20 mensajes)
-- ✅ Lista de usuarios conectados en vivo
-- ✅ Mensajes del sistema (conexión/desconexión)
-- ✅ API REST para información del servidor
-- ✅ Manejo robusto de errores y desconexiones
-- ✅ CORS configurado para frontend
+**Backend seguro con FastAPI, WebSockets y cifrado end-to-end**
 
-## Tecnologías
+[![Backend Status](https://img.shields.io/website?url=https://chat-backend-haeb.onrender.com&label=Backend%20Status&style=flat-square)](https://chat-backend-haeb.onrender.com)
+[![API Docs](https://img.shields.io/badge/API-Docs-blue?style=flat-square)](https://chat-backend-haeb.onrender.com/docs)
+[![Health Check](https://img.shields.io/badge/Health-Check-green?style=flat-square)](https://chat-backend-haeb.onrender.com/health)
 
-- **FastAPI**: Framework web rápido y moderno
-- **WebSockets**: Comunicación bidireccional en tiempo real
-- **Uvicorn**: Servidor ASGI de alto rendimiento
-- **Pydantic**: Validación de datos
+[🏠 Documentación Principal](https://github.com/h3n-x/chat-anonimo) • [🎨 Frontend](https://github.com/h3n-x/chat-frontend) • [🌐 Demo](https://write-ghost.netlify.app)
 
-## Instalación
+</div>
 
-1. Instalar dependencias:
+---
+
+## 📋 Tabla de Contenidos
+
+<details>
+<summary>🔍 Expandir navegación</summary>
+
+- [⚡ Quick Start](#-quick-start)
+- [🌟 Características](#-características)
+- [📦 Instalación](#-instalación)
+- [🔌 API Reference](#-api-reference)
+- [⚙️ Configuración](#️-configuración)
+- [🚀 Deployment](#-deployment)
+- [🤝 Contribución](#-contribución)
+
+</details>
+
+---
+
+## ⚡ Quick Start
+
+<div align="center">
+
+**¿Quieres probar el backend en 30 segundos?**
+
+</div>
+
 ```bash
+# 1️⃣ Clonar y configurar
+git clone https://github.com/h3n-x/chat-backend.git && cd chat-backend
+
+# 2️⃣ Instalar dependencias
 pip install -r requirements.txt
+
+# 3️⃣ Ejecutar servidor
+python main.py
+
+# 4️⃣ Verificar funcionamiento
+curl http://localhost:8000/health
 ```
 
-2. Ejecutar el servidor:
-```bash
-python run_server.py
-```
+> 💡 **Tip**: Para la experiencia completa, también ejecuta el [frontend](https://github.com/h3n-x/chat-frontend)
 
-O alternativamente:
+---
+
+## 🌟 Características
+
+<table>
+<tr>
+<td width="50%">
+
+### 🔧 **Stack Tecnológico**
+- **FastAPI** - Framework web moderno
+- **WebSockets** - Comunicación tiempo real
+- **Python 3.11+** - Rendimiento optimizado
+- **Asyncio** - Operaciones asíncronas
+- **Uvicorn** - Servidor ASGI de alto rendimiento
+- **Pydantic** - Validación de datos
+
+</td>
+<td width="50%">
+
+### 🛡️ **Seguridad Avanzada**
+- **🔐 AES-256-GCM** - Cifrado de grado militar
+- **🔑 Diffie-Hellman** - Intercambio seguro de claves
+- **🚫 Zero Persistence** - Sin almacenamiento de datos
+- **⏰ Auto-cleanup** - Limpieza automática
+- **🛡️ CORS** - Configuración de dominios
+- **🔒 Metadatos cifrados** - Privacidad total
+
+</td>
+</tr>
+</table>
+
+### 📁 **Gestión de Archivos Inteligente**
+
+| Característica | Descripción |
+|---|---|
+| **Subida Segura** | Validación automática de tipos de archivo |
+| **Cifrado Automático** | Todo el contenido se cifra con AES-256 |
+| **Límites Inteligentes** | Máximo 15MB por archivo |
+| **Auto-eliminación** | Archivos se eliminan después de 30 minutos |
+| **Metadatos Protegidos** | Información del archivo completamente cifrada |
+
+---
+
+## 📦 Instalación
+
+<details>
+<summary>📋 <strong>Requisitos del Sistema</strong></summary>
+
+- **Python 3.11+**
+- **pip** (gestor de paquetes)
+- **Git** (para clonar repositorio)
+- **4GB RAM** (recomendado)
+- **50MB espacio libre**
+
+</details>
+
+### 🔧 **Instalación Paso a Paso**
+
+<details>
+<summary>🐍 <strong>Instalación Estándar</strong></summary>
+
 ```bash
+# Clonar repositorio
+git clone https://github.com/h3n-x/chat-backend.git
+cd chat-backend
+
+# Crear entorno virtual (recomendado)
+python -m venv venv
+
+# Activar entorno virtual
+source venv/bin/activate  # Linux/Mac
+# o
+venv\Scripts\activate     # Windows
+
+# Instalar dependencias
+pip install -r requirements.txt
+
+# Ejecutar servidor
 python main.py
 ```
 
-## Endpoints
+</details>
 
-### REST API
-- `GET /` - Información general del servidor
-- `GET /health` - Estado de salud del servidor
+<details>
+<summary>🐳 <strong>Instalación con Docker</strong></summary>
 
-### WebSocket
-- `WS /ws` - Endpoint principal para conexiones de chat
+```bash
+# Construir imagen
+docker build -t chat-backend .
 
-## Estructura de Mensajes WebSocket
+# Ejecutar contenedor
+docker run -p 8000:8000 chat-backend
 
-### Mensajes del Cliente al Servidor
+# Verificar funcionamiento
+curl http://localhost:8000/health
+```
 
-#### Enviar mensaje de chat:
+</details>
+
+### 🔗 **Conexión con Frontend**
+
+Este backend funciona perfectamente con nuestro frontend de Next.js:
+
+- **📁 Repositorio**: [chat-frontend](https://github.com/h3n-x/chat-frontend.git)
+- **🌐 Demo Live**: [write-ghost.netlify.app](https://write-ghost.netlify.app)
+- **🔌 WebSocket**: `ws://localhost:8000/ws` (desarrollo)
+
+---
+
+## 🔌 API Reference
+
+### 🌐 **REST Endpoints**
+
+| Método | Endpoint | Descripción | Respuesta |
+|---|---|---|---|
+| `GET` | `/` | Información del servidor | Server info |
+| `GET` | `/health` | Estado de salud | Health status |
+| `GET` | `/docs` | Documentación interactiva | Swagger UI |
+
+### 🔌 **WebSocket Endpoints**
+
+| Endpoint | Protocolo | Descripción |
+|---|---|---|
+| `/ws` | WebSocket | Conexión principal de chat |
+
+<details>
+<summary>📡 <strong>Estructura de Mensajes WebSocket</strong></summary>
+
+#### **Cliente → Servidor**
+
+**Enviar mensaje:**
 ```json
 {
   "type": "chat_message",
@@ -59,16 +199,16 @@ python main.py
 }
 ```
 
-#### Ping (mantener conexión):
+**Mantener conexión:**
 ```json
 {
   "type": "ping"
 }
 ```
 
-### Mensajes del Servidor al Cliente
+#### **Servidor → Cliente**
 
-#### Mensaje de bienvenida:
+**Mensaje de bienvenida:**
 ```json
 {
   "type": "welcome",
@@ -82,7 +222,7 @@ python main.py
 }
 ```
 
-#### Mensaje de chat:
+**Mensaje de chat:**
 ```json
 {
   "type": "chat_message",
@@ -95,7 +235,7 @@ python main.py
 }
 ```
 
-#### Mensaje del sistema:
+**Mensaje del sistema:**
 ```json
 {
   "type": "system_message",
@@ -104,7 +244,7 @@ python main.py
 }
 ```
 
-#### Lista de usuarios:
+**Lista de usuarios:**
 ```json
 {
   "type": "user_list",
@@ -119,53 +259,31 @@ python main.py
 }
 ```
 
-#### Historial de mensajes:
-```json
-{
-  "type": "message_history",
-  "messages": [...]
-}
-```
+</details>
 
-## Configuración
+---
 
-Editar `config.py` para personalizar:
+## ⚙️ Configuración
 
-- `MAX_MESSAGE_LENGTH`: Longitud máxima de mensajes (500 caracteres)
-- `MAX_CONNECTIONS`: Máximo número de usuarios conectados (100)
-- `MESSAGE_HISTORY_LIMIT`: Mensajes guardados en historial (100)
-- `USER_COLORS`: Colores disponibles para usuarios
-- `HOST` y `PORT`: Configuración del servidor
+<details>
+<summary>🔧 <strong>Parámetros de Configuración</strong></summary>
 
-## Logs
+Edita `config.py` para personalizar el comportamiento:
 
-El servidor registra eventos importantes:
-- Conexiones y desconexiones de usuarios
-- Mensajes enviados (con longitud)
-- Errores de WebSocket
-- Estado general del servidor
+```python
+# Límites de mensajes
+MAX_MESSAGE_LENGTH = 500        # Caracteres máximos por mensaje
+MESSAGE_HISTORY_LIMIT = 100     # Mensajes en historial
 
-## Producción
+# Conexiones
+MAX_CONNECTIONS = 100           # Usuarios simultáneos máximos
 
-Para producción, considera:
+# Servidor
+HOST = "0.0.0.0"               # Host del servidor
+PORT = 8000                    # Puerto del servidor
 
-1. **Base de datos**: Reemplazar almacenamiento en memoria por Redis/PostgreSQL
-2. **Autenticación**: Implementar sistema de usuarios opcional
-3. **Rate limiting**: Limitar frecuencia de mensajes por usuario
-4. **Moderación**: Sistema de filtros y moderación de contenido
-5. **Escalabilidad**: Usar múltiples instancias con Redis para pub/sub
-6. **HTTPS**: Configurar SSL/TLS para conexiones seguras
-7. **Monitoreo**: Integrar herramientas de monitoreo y métricas
-
-## Estructura del Proyecto
-
-```
-chat-backend/
-├── main.py              # Servidor principal FastAPI
-├── models.py            # Modelos Pydantic
-├── config.py            # Configuración
-├── utils.py             # Utilidades y logging
-├── run_server.py        # Script para ejecutar servidor
-├── requirements.txt     # Dependencias
-└── README.md           # Este archivo
-```
+# Colores de usuario
+USER_COLORS = [
+    "#FF6B6B", "#4ECDC4", "#45B7D1", 
+    "#96CEB4", "#FFEAA7", "#DDA0DD"
+]
