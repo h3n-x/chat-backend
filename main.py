@@ -51,6 +51,8 @@ class ConnectionManager:
         self.connected_users: Dict[WebSocket, Dict] = {}
         # Historial de mensajes (en memoria, en producción usar base de datos)
         self.message_history: List[Dict] = []
+        # Timestamps de mensajes para auto-eliminación: {message_id: timestamp}
+        self.message_timestamps: Dict[str, datetime] = {}
         # Contador de usuarios anónimos
         self.anonymous_counter = 0
         # Rate limiting: {user_id: [timestamps]}
@@ -81,6 +83,9 @@ class ConnectionManager:
         
         # Generar clave para chat público al inicializar
         self.generate_public_chat_key()
+        
+        # Flag para saber si la tarea de limpieza ya está iniciada
+        self.cleanup_task_started = False
     
     def generate_public_chat_key(self):
         """Generar una clave temporal para el chat público"""
@@ -89,6 +94,95 @@ class ConnectionManager:
         logger.info("🔐 Clave del chat público generada con cifrado mejorado")
         # Códigos de invitación: {invite_code: room_id}
         self.invite_codes: Dict[str, str] = {}
+    
+    def start_message_cleanup_task(self):
+        """Iniciar tarea en segundo plano para limpiar mensajes automáticamente"""
+        if not self.cleanup_task_started:
+            try:
+                asyncio.create_task(self.auto_cleanup_messages())
+                self.cleanup_task_started = True
+                logger.info("🧹 Sistema de auto-eliminación de mensajes iniciado (30 segundos)")
+            except RuntimeError:
+                # No hay loop de eventos corriendo, se iniciará más tarde
+                logger.info("🧹 Sistema de auto-eliminación se iniciará cuando haya un loop de eventos")
+                pass
+    
+    async def auto_cleanup_messages(self):
+        """Tarea en segundo plano para eliminar mensajes automáticamente cada 30 segundos"""
+        while True:
+            try:
+                await asyncio.sleep(30)  # Esperar 30 segundos
+                current_time = datetime.now()
+                
+                # Limpiar mensajes del chat público que tienen más de 30 segundos
+                messages_to_remove = []
+                for i, message in enumerate(self.message_history):
+                    message_id = message.get('id')
+                    if message_id and message_id in self.message_timestamps:
+                        message_time = self.message_timestamps[message_id]
+                        if (current_time - message_time).total_seconds() > 30:
+                            messages_to_remove.append(i)
+                            del self.message_timestamps[message_id]
+                
+                # Eliminar mensajes en orden inverso para no afectar los índices
+                for i in reversed(messages_to_remove):
+                    del self.message_history[i]
+                
+                if messages_to_remove:
+                    logger.info(f"🗑️ Auto-eliminados {len(messages_to_remove)} mensajes después de 30 segundos")
+                
+                # Limpiar mensajes de salas privadas también
+                for room_id in list(self.private_rooms.keys()):
+                    room_messages = self.private_rooms[room_id].get("messages", [])
+                    room_messages_to_remove = []
+                    
+                    for i, message in enumerate(room_messages):
+                        message_id = message.get('id')
+                        if message_id and message_id in self.message_timestamps:
+                            message_time = self.message_timestamps[message_id]
+                            if (current_time - message_time).total_seconds() > 30:
+                                room_messages_to_remove.append(i)
+                                del self.message_timestamps[message_id]
+                    
+                    # Eliminar mensajes de la sala privada
+                    for i in reversed(room_messages_to_remove):
+                        del self.private_rooms[room_id]["messages"][i]
+                    
+                    if room_messages_to_remove:
+                        logger.info(f"🗑️ Auto-eliminados {len(room_messages_to_remove)} mensajes de sala privada {room_id}")
+                
+                # Limpiar timestamps huérfanos (sin mensaje asociado)
+                orphaned_timestamps = []
+                for message_id in self.message_timestamps:
+                    # Verificar si el message_id existe en algún historial
+                    found = False
+                    for message in self.message_history:
+                        if message.get('id') == message_id:
+                            found = True
+                            break
+                    
+                    if not found:
+                        # Verificar en salas privadas
+                        for room in self.private_rooms.values():
+                            for message in room.get("messages", []):
+                                if message.get('id') == message_id:
+                                    found = True
+                                    break
+                            if found:
+                                break
+                    
+                    if not found:
+                        orphaned_timestamps.append(message_id)
+                
+                for message_id in orphaned_timestamps:
+                    del self.message_timestamps[message_id]
+                
+                if orphaned_timestamps:
+                    logger.info(f"🧹 Limpiados {len(orphaned_timestamps)} timestamps huérfanos")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error en auto-limpieza de mensajes: {e}")
+                # Continuar con la tarea aunque haya errores
     
     def _cleanup_duplicate_users(self):
         """Limpiar usuarios duplicados o conexiones rotas de manera más agresiva"""
@@ -234,6 +328,10 @@ class ConnectionManager:
         await self._close_duplicate_connections(client_ip, websocket)
         
         self.active_connections.append(websocket)
+        
+        # Iniciar tarea de limpieza si es la primera conexión
+        if not self.cleanup_task_started:
+            self.start_message_cleanup_task()
         
         # Generar nombre anónimo único
         self.anonymous_counter += 1
@@ -399,6 +497,10 @@ class ConnectionManager:
         # Guardar en historial
         self.message_history.append(chat_message)
         
+        # Guardar timestamp para auto-eliminación
+        if chat_message.get('id'):
+            self.message_timestamps[chat_message['id']] = datetime.now()
+        
         # Limitar historial
         if len(self.message_history) > MESSAGE_HISTORY_LIMIT:
             self.message_history = self.message_history[-MESSAGE_HISTORY_LIMIT:]
@@ -460,13 +562,11 @@ class ConnectionManager:
             self.disconnect(connection)
     
     async def _send_message_history(self, websocket: WebSocket):
-        """Enviar historial de mensajes a un usuario específico"""
-        if self.message_history:
-            history_message = {
-                "type": "message_history",
-                "messages": self.message_history[-20:]  # Últimos 20 mensajes
-            }
-            await self._send_personal_message(websocket, history_message)
+        """NO enviar historial de mensajes para máximo anonimato"""
+        # Para máximo anonimato, no enviamos historial de mensajes
+        # Los nuevos usuarios empiezan con una sala limpia
+        logger.info("🧹 No se envió historial - modo anónimo total activado")
+        pass
     
     def cleanup_inactive_data(self):
         """Limpiar datos de usuarios inactivos y caché"""
@@ -697,6 +797,10 @@ class ConnectionManager:
         # Guardar en historial de la sala
         self.private_rooms[room_id]["messages"].append(chat_message)
         
+        # Guardar timestamp para auto-eliminación
+        if chat_message.get('id'):
+            self.message_timestamps[chat_message['id']] = datetime.now()
+        
         # Limitar historial de la sala
         if len(self.private_rooms[room_id]["messages"]) > MESSAGE_HISTORY_LIMIT:
             self.private_rooms[room_id]["messages"] = self.private_rooms[room_id]["messages"][-MESSAGE_HISTORY_LIMIT:]
@@ -764,6 +868,10 @@ class ConnectionManager:
         if encrypted_data:
             history_entry["message"] = "[Mensaje cifrado]"
         self.message_history.append(history_entry)
+
+        # Guardar timestamp para auto-eliminación
+        if history_entry.get('id'):
+            self.message_timestamps[history_entry['id']] = datetime.now()
 
         # Limitar historial
         if len(self.message_history) > MESSAGE_HISTORY_LIMIT:
@@ -838,6 +946,10 @@ class ConnectionManager:
         if encrypted_data:
             history_entry["message"] = "[Mensaje cifrado]"
         self.private_rooms[room_id]["messages"].append(history_entry)
+
+        # Guardar timestamp para auto-eliminación
+        if history_entry.get('id'):
+            self.message_timestamps[history_entry['id']] = datetime.now()
 
         # Limitar historial de la sala
         if len(self.private_rooms[room_id]["messages"]) > MESSAGE_HISTORY_LIMIT:
