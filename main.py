@@ -1241,20 +1241,54 @@ async def upload_file(
         
         # Crear mensaje de archivo
         user_info = manager.connected_users[user_websocket]
-        file_message = {
-            "type": "file_message",
-            "id": str(uuid.uuid4()),
-            "file_id": file_info["file_id"],
-            "filename": file_info["filename"],
-            "file_size": file_info["size"],
-            "mime_type": file_info["mime_type"],
-            "file_url": file_info["url"],
-            "user_id": user_id,
-            "username": user_info["username"],
-            "color": user_info["color"],
-            "timestamp": datetime.now().isoformat(),
-            "room_id": room_id
-        }
+        
+        # CIFRAR TAMBIÉN LOS METADATOS DEL ARCHIVO
+        if room_id == "general":
+            # Cifrar metadatos para chat público
+            metadata_to_encrypt = {
+                "filename": file_info["filename"],
+                "file_size": file_info["size"],
+                "mime_type": file_info["mime_type"]
+            }
+            encrypted_metadata = manager.crypto.encrypt_message_content(
+                json.dumps(metadata_to_encrypt), None
+            )
+            
+            file_message = {
+                "type": "file_message",
+                "id": str(uuid.uuid4()),
+                "file_id": file_info["file_id"],
+                "file_url": file_info["url"],
+                "user_id": user_id,
+                "username": user_info["username"],
+                "color": user_info["color"],
+                "timestamp": datetime.now().isoformat(),
+                "room_id": room_id,
+                "encrypted_metadata": encrypted_metadata  # Metadatos cifrados
+            }
+        else:
+            # Para salas privadas, también cifrar metadatos
+            metadata_to_encrypt = {
+                "filename": file_info["filename"],
+                "file_size": file_info["size"],
+                "mime_type": file_info["mime_type"]
+            }
+            encrypted_metadata = manager.crypto.encrypt_message_content(
+                json.dumps(metadata_to_encrypt), room_id
+            )
+            
+            file_message = {
+                "type": "file_message",
+                "id": str(uuid.uuid4()),
+                "file_id": file_info["file_id"],
+                "file_url": file_info["url"],
+                "user_id": user_id,
+                "username": user_info["username"],
+                "color": user_info["color"],
+                "timestamp": datetime.now().isoformat(),
+                "room_id": room_id,
+                "encrypted_metadata": encrypted_metadata  # Metadatos cifrados
+            }
         
         # Enviar mensaje a la sala correspondiente
         if room_id == "general":
