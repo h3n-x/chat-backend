@@ -1250,7 +1250,7 @@ async def upload_file(
                 "file_size": file_info["size"],
                 "mime_type": file_info["mime_type"]
             }
-            encrypted_metadata = manager.crypto.encrypt_message_content(
+            encrypted_metadata = manager.crypto.encrypt_message(
                 json.dumps(metadata_to_encrypt), None
             )
             
@@ -1273,7 +1273,7 @@ async def upload_file(
                 "file_size": file_info["size"],
                 "mime_type": file_info["mime_type"]
             }
-            encrypted_metadata = manager.crypto.encrypt_message_content(
+            encrypted_metadata = manager.crypto.encrypt_message(
                 json.dumps(metadata_to_encrypt), room_id
             )
             
