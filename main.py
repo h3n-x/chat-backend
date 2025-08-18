@@ -133,8 +133,8 @@ class ConnectionManager:
         """Iniciar tarea en segundo plano para limpiar mensajes automáticamente"""
         if not self.cleanup_task_started:
             self.cleanup_task_started = True
-            asyncio.create_task(self.cleanup_old_messages())
-            asyncio.create_task(self.cleanup_old_files())  # Nueva tarea para archivos
+            # Solo iniciamos la limpieza de archivos, los mensajes se eliminan automáticamente por tiempo
+            asyncio.create_task(self.cleanup_old_files())
             logger.info("🧹 Tarea de limpieza automática iniciada")
     
     async def cleanup_old_files(self):
@@ -779,6 +779,10 @@ class ConnectionManager:
         }
         
         await self._broadcast_to_all(user_list_message)
+    
+    async def broadcast(self, message: dict):
+        """Enviar un mensaje a todos los usuarios conectados"""
+        await self._broadcast_to_all(message)
     
     async def _broadcast_to_all(self, message: dict):
         """Método interno para enviar mensaje a todos los usuarios"""
@@ -1490,11 +1494,12 @@ async def cleanup_expired_files():
     """Tarea periódica para limpiar archivos expirados"""
     while True:
         try:
-            now = time.time()
+            now = datetime.now()
             expired_files = []
             
             for file_id, file_data in manager.uploaded_files.items():
-                if now - file_data["uploaded_at"] > FILE_RETENTION_TIME:
+                upload_time = file_data["uploaded_at"]
+                if (now - upload_time).total_seconds() > FILE_RETENTION_TIME:
                     expired_files.append(file_id)
             
             for file_id in expired_files:
