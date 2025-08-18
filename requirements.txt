@@ -4,9 +4,11 @@ websockets==12.0
 python-multipart==0.0.6
 pydantic==2.5.0
 aiohttp==3.9.1
+aiofiles==23.2.0
+Pillow>=10.0.0
 # Dependencias para testing (opcional)
 pytest==7.4.3
 httpx==0.25.2
 
-cryptography
-pycryptodome
+cryptography>=41.0.0
+pycryptodome>=3.19.0

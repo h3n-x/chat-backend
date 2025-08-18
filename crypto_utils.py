@@ -5,6 +5,7 @@ Implementa AES-256-GCM para cifrado end-to-end seguro
 import base64
 import secrets
 import json
+import time
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -148,6 +149,93 @@ class ChatCrypto:
             return True
         except Exception:
             return False
+    
+    def encrypt_file_content(self, content: bytes, room_id: Optional[str] = None) -> Optional[Dict]:
+        """
+        Cifrar contenido de archivo usando AES-256-GCM
+        
+        Args:
+            content: Contenido del archivo en bytes
+            room_id: ID de la sala (None para chat público)
+            
+        Returns:
+            Dict con datos cifrados o None si hay error
+        """
+        try:
+            # Seleccionar clave
+            if room_id and room_id in self.room_keys:
+                key = self.room_keys[room_id]
+                context = f"room_{room_id}"
+            elif self.public_chat_key:
+                key = self.public_chat_key
+                context = "public_chat"
+            else:
+                logger.error("❌ No hay clave disponible para cifrar archivo")
+                return None
+            
+            # Crear cipher
+            aesgcm = AESGCM(key)
+            
+            # Generar nonce único
+            nonce = secrets.token_bytes(12)  # 96 bits para GCM
+            
+            # Cifrar contenido
+            ciphertext = aesgcm.encrypt(nonce, content, None)
+            
+            # Retornar datos cifrados
+            encrypted_data = {
+                "encrypted_content": nonce + ciphertext,  # Nonce + datos cifrados
+                "algorithm": "AES-256-GCM",
+                "context": context,
+                "timestamp": json.dumps({"encrypted_at": str(int(time.time()))})
+            }
+            
+            logger.info(f"🔐 Archivo cifrado exitosamente ({len(content)} bytes -> {len(encrypted_data['encrypted_content'])} bytes)")
+            return encrypted_data
+            
+        except Exception as e:
+            logger.error(f"❌ Error cifrando archivo: {e}")
+            return None
+    
+    def decrypt_file_content(self, encrypted_content: bytes, room_id: Optional[str] = None) -> Optional[bytes]:
+        """
+        Descifrar contenido de archivo
+        
+        Args:
+            encrypted_content: Contenido cifrado (nonce + ciphertext)
+            room_id: ID de la sala (None para chat público)
+            
+        Returns:
+            Contenido descifrado en bytes o None si hay error
+        """
+        try:
+            # Seleccionar clave
+            if room_id and room_id in self.room_keys:
+                key = self.room_keys[room_id]
+            elif self.public_chat_key:
+                key = self.public_chat_key
+            else:
+                logger.error("❌ No hay clave disponible para descifrar archivo")
+                return None
+            
+            # Extraer nonce y ciphertext
+            if len(encrypted_content) < 12:
+                logger.error("❌ Contenido cifrado demasiado corto")
+                return None
+                
+            nonce = encrypted_content[:12]
+            ciphertext = encrypted_content[12:]
+            
+            # Crear cipher y descifrar
+            aesgcm = AESGCM(key)
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+            
+            logger.info(f"🔓 Archivo descifrado exitosamente ({len(encrypted_content)} bytes -> {len(plaintext)} bytes)")
+            return plaintext
+            
+        except Exception as e:
+            logger.error(f"❌ Error descifrando archivo: {e}")
+            return None
 
 # Instancia global del sistema de cifrado
 chat_crypto = ChatCrypto()

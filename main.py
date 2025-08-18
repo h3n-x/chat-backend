@@ -1,13 +1,21 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
 from typing import List, Dict, Optional
 import json
 import uuid
+import os
+import shutil
+import time
 from datetime import datetime, timedelta
 import logging
 import asyncio
 import re
 from collections import defaultdict
+import aiofiles
+from pathlib import Path
 
 from config import *
 from models import ChatMessage, UserInfo, WebSocketMessage
@@ -17,10 +25,23 @@ from crypto_utils import chat_crypto
 # Configurar logging
 logger = setup_logger("chat_backend")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Configurar tareas de inicio y cierre de la aplicación"""
+    # Startup
+    asyncio.create_task(cleanup_expired_files())
+    logger.info("🚀 Sistema iniciado - Chat anónimo con archivos temporales")
+    logger.info(f"📁 Límites: {MAX_FILE_SIZE/(1024*1024):.1f}MB por archivo, {MAX_FILES_PER_USER} archivos por usuario")
+    logger.info(f"⏰ Retención: mensajes {MESSAGE_RETENTION_TIME//60}min, archivos {FILE_RETENTION_TIME//60}min")
+    yield
+    # Shutdown
+    logger.info("🛑 Sistema detenido")
+
 app = FastAPI(
     title="Chat Anónimo Backend", 
     description="API para chat anónimo en tiempo real con WebSockets",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Configurar CORS para desarrollo y producción
@@ -42,6 +63,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Crear directorio de uploads y servir archivos estáticos
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 class ConnectionManager:
     def __init__(self):
@@ -81,6 +106,15 @@ class ConnectionManager:
         # Clave del chat público (se genera al inicio)
         self.public_chat_key: str = None
         
+        # *** SISTEMA DE ARCHIVOS MEJORADO PARA MÁXIMO ANONIMATO ***
+        # Archivos subidos: {file_id: {"path": str, "uploaded_at": datetime, "user_id": str, "room_id": str}}
+        self.uploaded_files: Dict[str, Dict] = {}
+        # Tracking por usuario: {user_id: [file_ids]}
+        self.user_files: Dict[str, List[str]] = defaultdict(list)
+        # Crear directorio de uploads temporal si no existe
+        self.upload_dir = Path(UPLOAD_DIR)
+        self.upload_dir.mkdir(exist_ok=True)
+        
         # Generar clave para chat público al inicializar
         self.generate_public_chat_key()
         
@@ -97,6 +131,201 @@ class ConnectionManager:
     
     def start_message_cleanup_task(self):
         """Iniciar tarea en segundo plano para limpiar mensajes automáticamente"""
+        if not self.cleanup_task_started:
+            self.cleanup_task_started = True
+            asyncio.create_task(self.cleanup_old_messages())
+            asyncio.create_task(self.cleanup_old_files())  # Nueva tarea para archivos
+            logger.info("🧹 Tarea de limpieza automática iniciada")
+    
+    async def cleanup_old_files(self):
+        """Limpiar archivos antiguos automáticamente"""
+        while True:
+            try:
+                await asyncio.sleep(FILE_CLEANUP_INTERVAL)
+                current_time = datetime.now()
+                files_to_remove = []
+                
+                for file_id, file_data in self.uploaded_files.items():
+                    upload_time = file_data["uploaded_at"]
+                    if (current_time - upload_time).total_seconds() > FILE_RETENTION_TIME:
+                        files_to_remove.append(file_id)
+                
+                for file_id in files_to_remove:
+                    await self.remove_file(file_id)
+                    
+                if files_to_remove:
+                    logger.info(f"🗑️ Eliminados {len(files_to_remove)} archivos antiguos")
+                    
+            except Exception as e:
+                logger.error(f"Error en limpieza de archivos: {e}")
+    
+    async def save_file(self, file: UploadFile, user_id: str, room_id: str = "general") -> Dict:
+        """Guardar archivo subido con límites de privacidad y anonimato"""
+        try:
+            # VALIDAR LÍMITES DE ARCHIVOS POR USUARIO
+            user_file_count = len(self.user_files.get(user_id, []))
+            if user_file_count >= MAX_FILES_PER_USER:
+                raise HTTPException(
+                    status_code=429, 
+                    detail=f"Máximo {MAX_FILES_PER_USER} archivos por usuario. Espera a que se eliminen automáticamente."
+                )
+            
+            # VALIDAR LÍMITE TOTAL DE ARCHIVOS EN EL SISTEMA
+            if len(self.uploaded_files) >= MAX_TOTAL_FILES:
+                # Eliminar archivos más antiguos automáticamente
+                await self._cleanup_oldest_files(5)  # Eliminar 5 archivos antiguos
+                
+                if len(self.uploaded_files) >= MAX_TOTAL_FILES:
+                    raise HTTPException(
+                        status_code=503, 
+                        detail="Sistema temporalmente lleno. Intenta en unos minutos."
+                    )
+            
+            # Generar ID único para el archivo
+            file_id = str(uuid.uuid4())
+            
+            # Sanitizar nombre de archivo
+            safe_filename = re.sub(r'[<>:"/\\|?*]', '', file.filename)
+            file_extension = Path(safe_filename).suffix.lower()
+            
+            # Leer contenido del archivo
+            content = await file.read()
+            
+            # CIFRAR EL ARCHIVO ANTES DE GUARDARLO
+            encrypted_content = None
+            if room_id == "general":
+                # Usar clave del chat público
+                encrypted_data = self.crypto.encrypt_file_content(content, None)
+                if encrypted_data:
+                    encrypted_content = encrypted_data["encrypted_content"]
+                    logger.info(f"🔐 Archivo {safe_filename} cifrado para chat público")
+            else:
+                # Usar clave de la sala privada
+                encrypted_data = self.crypto.encrypt_file_content(content, room_id)
+                if encrypted_data:
+                    encrypted_content = encrypted_data["encrypted_content"]
+                    logger.info(f"🔐 Archivo {safe_filename} cifrado para sala {room_id}")
+            
+            # Si no se pudo cifrar, usar contenido original (fallback)
+            content_to_save = encrypted_content if encrypted_content else content
+            is_encrypted = encrypted_content is not None
+            
+            # Crear nombre único CON TIMESTAMP para evitar colisiones
+            timestamp = int(time.time())
+            unique_filename = f"{timestamp}_{file_id[:8]}_{safe_filename}"
+            file_path = self.upload_dir / unique_filename
+            
+            # Guardar archivo (cifrado o original)
+            async with aiofiles.open(file_path, 'wb') as f:
+                await f.write(content_to_save)
+            
+            # Guardar información del archivo
+            file_info = {
+                "path": str(file_path),
+                "filename": safe_filename,
+                "size": len(content),  # Tamaño original
+                "encrypted_size": len(content_to_save),  # Tamaño cifrado
+                "mime_type": file.content_type,
+                "uploaded_at": datetime.now(),
+                "user_id": user_id,
+                "room_id": room_id,
+                "is_encrypted": is_encrypted
+            }
+            
+            # Registrar archivo en tracking
+            self.uploaded_files[file_id] = file_info
+            self.user_files[user_id].append(file_id)
+            
+            encryption_status = "cifrado" if is_encrypted else "sin cifrar"
+            logger.info(f"📁 Archivo guardado ({encryption_status}): {safe_filename} ({len(content)} bytes) - Usuario: {user_file_count + 1}/{MAX_FILES_PER_USER}")
+            
+            return {
+                "file_id": file_id,
+                "filename": safe_filename,
+                "size": len(content),
+                "mime_type": file.content_type,
+                "url": f"/files/{file_id}",
+                "is_encrypted": is_encrypted,
+                "retention_minutes": FILE_RETENTION_TIME // 60
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error guardando archivo: {e}")
+            raise HTTPException(status_code=500, detail="Error guardando archivo")
+    
+    async def remove_file(self, file_id: str) -> bool:
+        """Eliminar archivo y su información"""
+        try:
+            if file_id in self.uploaded_files:
+                file_data = self.uploaded_files[file_id]
+                file_path = Path(file_data["path"])
+                user_id = file_data.get("user_id")
+                
+                # Eliminar archivo físico
+                if file_path.exists():
+                    file_path.unlink()
+                
+                # Eliminar de tracking
+                del self.uploaded_files[file_id]
+                
+                # Eliminar de tracking por usuario
+                if user_id and user_id in self.user_files:
+                    if file_id in self.user_files[user_id]:
+                        self.user_files[user_id].remove(file_id)
+                    
+                    # Limpiar lista vacía
+                    if not self.user_files[user_id]:
+                        del self.user_files[user_id]
+                
+                logger.info(f"🗑️ Archivo eliminado: {file_data['filename']}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error eliminando archivo {file_id}: {e}")
+        
+        return False
+    
+    async def _cleanup_oldest_files(self, count: int = 5):
+        """Eliminar los archivos más antiguos del sistema"""
+        try:
+            # Ordenar archivos por fecha de subida
+            sorted_files = sorted(
+                self.uploaded_files.items(),
+                key=lambda x: x[1]["uploaded_at"]
+            )
+            
+            # Eliminar los más antiguos
+            for i in range(min(count, len(sorted_files))):
+                file_id = sorted_files[i][0]
+                await self.remove_file(file_id)
+                
+            logger.info(f"🧹 Eliminados {min(count, len(sorted_files))} archivos antiguos por límite del sistema")
+            
+        except Exception as e:
+            logger.error(f"Error en limpieza de archivos antiguos: {e}")
+    
+    def _cleanup_user_files_on_disconnect(self, user_id: str):
+        """Limpiar archivos de un usuario cuando se desconecta (opcional para máxima privacidad)"""
+        try:
+            if user_id in self.user_files:
+                file_ids_to_remove = self.user_files[user_id].copy()
+                for file_id in file_ids_to_remove:
+                    # Eliminar archivo de forma asíncrona
+                    asyncio.create_task(self.remove_file(file_id))
+                
+                logger.info(f"🧹 Programada eliminación de {len(file_ids_to_remove)} archivos del usuario desconectado")
+                
+        except Exception as e:
+            logger.error(f"Error limpiando archivos de usuario {user_id}: {e}")
+    
+    def get_file_info(self, file_id: str) -> Optional[Dict]:
+        """Obtener información de un archivo"""
+        return self.uploaded_files.get(file_id)
+    
+    def start_auto_cleanup(self):
+        """Iniciar sistema de auto-eliminación de mensajes"""
         if not self.cleanup_task_started:
             try:
                 asyncio.create_task(self.auto_cleanup_messages())
@@ -416,6 +645,10 @@ class ConnectionManager:
                     # Limpiar claves de cifrado del usuario
                     if user_id in self.user_public_keys:
                         del self.user_public_keys[user_id]
+                    
+                    # Para máxima privacidad, limpiar archivos del usuario al desconectarse
+                    # (Opcional - descomenta la siguiente línea si quieres eliminar archivos al desconectar)
+                    # self._cleanup_user_files_on_disconnect(user_id)
                     
                     log_connection_event("DISCONNECTED", username, len(self.active_connections))
                     
@@ -961,6 +1194,188 @@ class ConnectionManager:
         log_message_event(sender_info['username'], len(display_message))
         return True
 
+# ==================== ENDPOINTS PARA ARCHIVOS ====================
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    room_id: str = Form(default="general")
+):
+    """Subir un archivo al chat"""
+    try:
+        # Validar usuario existe
+        user_websocket = None
+        for ws, user_info in manager.connected_users.items():
+            if user_info["id"] == user_id:
+                user_websocket = ws
+                break
+        
+        if not user_websocket:
+            raise HTTPException(status_code=401, detail="Usuario no conectado")
+        
+        # Validar tamaño del archivo
+        content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413, 
+                detail=f"Archivo demasiado grande. Máximo {MAX_FILE_SIZE // (1024*1024)}MB"
+            )
+        
+        # Validar tipo de archivo
+        if file.content_type not in ALLOWED_FILE_TYPES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"Tipo de archivo no permitido: {file.content_type}"
+            )
+        
+        # Resetear stream del archivo
+        await file.seek(0)
+        
+        # Guardar archivo
+        file_info = await manager.save_file(file, user_id, room_id)
+        
+        # Crear mensaje de archivo
+        user_info = manager.connected_users[user_websocket]
+        file_message = {
+            "type": "file_message",
+            "id": str(uuid.uuid4()),
+            "file_id": file_info["file_id"],
+            "filename": file_info["filename"],
+            "file_size": file_info["size"],
+            "mime_type": file_info["mime_type"],
+            "file_url": file_info["url"],
+            "user_id": user_id,
+            "username": user_info["username"],
+            "color": user_info["color"],
+            "timestamp": datetime.now().isoformat(),
+            "room_id": room_id
+        }
+        
+        # Enviar mensaje a la sala correspondiente
+        if room_id == "general":
+            # Chat público
+            manager.message_history.append(file_message)
+            manager.message_timestamps[file_message["id"]] = datetime.now()
+            await manager.broadcast(file_message)
+        else:
+            # Sala privada
+            if room_id in manager.private_rooms:
+                manager.private_rooms[room_id]["messages"].append(file_message)
+                manager.message_timestamps[file_message["id"]] = datetime.now()
+                await manager.broadcast_to_room(room_id, file_message)
+        
+        logger.info(f"📁 Archivo subido: {file_info['filename']} por {user_info['username']}")
+        
+        return {
+            "success": True,
+            "message": "Archivo subido exitosamente",
+            "file_info": file_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error subiendo archivo: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+@app.get("/files/{file_id}")
+async def get_file(file_id: str):
+    """Descargar un archivo por su ID (descifrándolo si es necesario)"""
+    try:
+        file_info = manager.get_file_info(file_id)
+        if not file_info:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        
+        file_path = Path(file_info["path"])
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Archivo no existe en el servidor")
+        
+        # Leer archivo del disco
+        async with aiofiles.open(file_path, 'rb') as f:
+            file_content = await f.read()
+        
+        # Si el archivo está cifrado, descifrarlo
+        if file_info.get("is_encrypted", False):
+            room_id = file_info.get("room_id")
+            
+            try:
+                if room_id == "general":
+                    # Descifrar con clave del chat público
+                    decrypted_content = manager.crypto.decrypt_file_content(file_content, None)
+                else:
+                    # Descifrar con clave de la sala privada
+                    decrypted_content = manager.crypto.decrypt_file_content(file_content, room_id)
+                
+                if decrypted_content:
+                    file_content = decrypted_content
+                    logger.info(f"🔓 Archivo {file_info['filename']} descifrado exitosamente")
+                else:
+                    logger.error(f"❌ No se pudo descifrar archivo {file_info['filename']}")
+                    raise HTTPException(status_code=500, detail="Error descifrando archivo")
+                    
+            except Exception as e:
+                logger.error(f"Error descifrando archivo: {e}")
+                raise HTTPException(status_code=500, detail="Error descifrando archivo")
+        
+        # Crear respuesta temporal con el contenido descifrado
+        import tempfile
+        import os
+        
+        # Crear archivo temporal con el contenido descifrado
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file_info["filename"]).suffix) as temp_file:
+            temp_file.write(file_content)
+            temp_path = temp_file.name
+        
+        # Retornar archivo y programar limpieza
+        def cleanup_temp_file():
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+        
+        import atexit
+        atexit.register(cleanup_temp_file)
+        
+        return FileResponse(
+            path=temp_path,
+            filename=file_info["filename"],
+            media_type=file_info["mime_type"],
+            background=cleanup_temp_file  # Limpiar después de enviar
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error descargando archivo {file_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+@app.delete("/files/{file_id}")
+async def delete_file(file_id: str, user_id: str = Form(...)):
+    """Eliminar un archivo (solo el propietario)"""
+    try:
+        file_info = manager.get_file_info(file_id)
+        if not file_info:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        
+        # Verificar que el usuario es el propietario
+        if file_info["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="No tienes permiso para eliminar este archivo")
+        
+        success = await manager.remove_file(file_id)
+        if success:
+            return {"success": True, "message": "Archivo eliminado exitosamente"}
+        else:
+            raise HTTPException(status_code=500, detail="Error eliminando archivo")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error eliminando archivo {file_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+# ==================== ENDPOINTS EXISTENTES ====================
+
 @app.get("/stats")
 async def get_stats():
     """Obtener estadísticas detalladas del chat"""
@@ -1070,6 +1485,29 @@ async def admin_broadcast(message: dict):
 
 # Instancia global del manager de conexiones
 manager = ConnectionManager()
+
+async def cleanup_expired_files():
+    """Tarea periódica para limpiar archivos expirados"""
+    while True:
+        try:
+            now = time.time()
+            expired_files = []
+            
+            for file_id, file_data in manager.uploaded_files.items():
+                if now - file_data["uploaded_at"] > FILE_RETENTION_TIME:
+                    expired_files.append(file_id)
+            
+            for file_id in expired_files:
+                await manager.remove_file(file_id)
+            
+            if expired_files:
+                logger.info(f"🧹 Limpieza automática: {len(expired_files)} archivos expirados eliminados")
+            
+        except Exception as e:
+            logger.error(f"Error en limpieza automática de archivos: {e}")
+        
+        # Ejecutar cada 5 minutos
+        await asyncio.sleep(300)
 
 @app.get("/")
 async def root():
@@ -1206,6 +1644,30 @@ async def websocket_endpoint(websocket: WebSocket):
                             await manager.send_personal_message(websocket, {
                                 "type": "message_rejected",
                                 "reason": "Mensaje no pudo ser enviado"
+                            })
+                
+                elif message_type == "file_message":
+                    # Manejar mensaje de archivo desde WebSocket (principalmente para notificaciones)
+                    file_id = message_data.get("file_id")
+                    room_id = message_data.get("room_id", "general")
+                    
+                    if file_id:
+                        # Verificar que el archivo existe
+                        file_info = manager.get_file_info(file_id)
+                        if file_info:
+                            user_info = manager.connected_users.get(websocket)
+                            if user_info:
+                                # El archivo ya fue procesado por el endpoint /upload
+                                # Solo confirmar recepción
+                                await manager.send_personal_message(websocket, {
+                                    "type": "file_received",
+                                    "file_id": file_id,
+                                    "message": "Archivo procesado correctamente"
+                                })
+                        else:
+                            await manager.send_personal_message(websocket, {
+                                "type": "error",
+                                "message": "Archivo no encontrado"
                             })
                 
                 elif message_type == "join_room":

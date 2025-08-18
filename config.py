@@ -3,9 +3,35 @@ import os
 
 MAX_MESSAGE_LENGTH = 500
 MAX_USERNAME_LENGTH = 30
-MAX_CONNECTIONS = 100
-MESSAGE_HISTORY_LIMIT = 100
+MAX_CONNECTIONS = 50  # Reducido para mejor rendimiento sin BD
+MESSAGE_HISTORY_LIMIT = 50  # Reducido para mayor privacidad
 PING_INTERVAL = 30  # segundos
+
+# Configuración de archivos - TAMAÑOS RAZONABLES PARA MÁXIMO ANONIMATO
+MAX_FILE_SIZE = 15 * 1024 * 1024  # 15MB máximo (mejor balance para archivos útiles)
+MAX_FILES_PER_USER = 5  # Máximo 5 archivos por usuario conectado
+MAX_TOTAL_FILES = 30   # Máximo 30 archivos totales en memoria
+
+ALLOWED_FILE_TYPES = {
+    # Imágenes (optimizadas para chat)
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    # Documentos básicos
+    'application/pdf': '.pdf',
+    'text/plain': '.txt',
+    # Audio ligero para mensajes de voz
+    'audio/mpeg': '.mp3',
+    'audio/webm': '.webm',
+    'audio/ogg': '.ogg'
+    # Removimos videos y documentos pesados para mejor rendimiento
+}
+
+UPLOAD_DIR = "temp_uploads"  # Nombre más claro
+FILE_CLEANUP_INTERVAL = 180  # 3 minutos (más frecuente)
+FILE_RETENTION_TIME = 2700   # 45 minutos (balance entre utilidad y privacidad)
+MESSAGE_RETENTION_TIME = 600 # 10 minutos para mensajes (más privacidad)
 
 # Configuración del servidor
 HOST = os.getenv("HOST", "localhost")

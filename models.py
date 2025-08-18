@@ -16,6 +16,25 @@ class ChatMessage(BaseModel):
             raise ValueError('El mensaje no puede estar vacío')
         return v.strip()
 
+class FileMessage(BaseModel):
+    type: str = "file_message"
+    file_id: str = Field(..., min_length=1)
+    filename: str = Field(..., min_length=1, max_length=255)
+    file_size: int = Field(..., gt=0)
+    mime_type: str = Field(..., min_length=1)
+    file_url: str = Field(..., min_length=1)
+    user_id: Optional[str] = None
+    username: Optional[str] = None
+    timestamp: Optional[str] = None
+    room_id: Optional[str] = None
+    
+    @validator('filename')
+    def validate_filename(cls, v):
+        # Sanitizar nombre de archivo
+        import re
+        sanitized = re.sub(r'[<>:"/\\|?*]', '', v)
+        return sanitized[:255]
+
 class SystemMessage(BaseModel):
     type: str = "system_message"
     message: str = Field(..., min_length=1)
@@ -36,7 +55,7 @@ class WebSocketMessage(BaseModel):
     
     @validator('type')
     def validate_type(cls, v):
-        allowed_types = ['chat_message', 'ping', 'pong', 'typing', 'join_room', 'leave_room']
+        allowed_types = ['chat_message', 'ping', 'pong', 'typing', 'join_room', 'leave_room', 'file_message']
         if v not in allowed_types:
             raise ValueError(f'Tipo de mensaje debe ser uno de: {allowed_types}')
         return v
