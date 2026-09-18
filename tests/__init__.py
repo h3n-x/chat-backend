@@ -1,0 +1,1 @@
+"""Chat Anónimo Test Suite."""

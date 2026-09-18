@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
-"""
-Script de inicio para Render.com
-"""
+"""Startup script for Render / Cloud hosting."""
 import os
 import uvicorn
+from app.config import HOST
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    host = "0.0.0.0"  # Render requiere bind a todas las interfaces
-    
-    print("🚀 Iniciando servidor para Render...")
-    print(f"🌐 Puerto: {port}")
-    print("💬 Chat anónimo listo!")
-    
     uvicorn.run(
         "main:app",
-        host=host,
+        host=HOST,
         port=port,
         log_level="info",
-        access_log=True
+        access_log=True,
     )
