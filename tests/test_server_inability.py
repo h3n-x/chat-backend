@@ -37,15 +37,16 @@ def derive_wrap_key(shared_secret: bytes) -> bytes:
     return hkdf.derive(shared_secret)
 
 
-def test_server_mathematical_inability_to_decrypt():
-    """Rigorous audit proving that the server process (memory, logs, network frames)
-    is mathematically incapable of decrypting messages or recovering client private keys.
+def test_server_key_isolation_and_zero_retention():
+    """Audit verifying that the server implementation strictly isolates cryptographic material,
+    never storing, logging, or retaining client private keys, wrapping keys, or plaintext messages
+    during normal operation, and operating strictly as a blind relay.
     
     1. Runs against the REAL FastAPI backend application via real WebSockets.
     2. Simulates a complete flow: Alice & Bob perform real ECDH P-256 key exchange,
        pairwise RoomKey wrapping, and authenticated AES-256-GCM messaging.
-    3. Forensically audits server logs and backend process memory.
-    4. Proves the server never receives or retains sk_Alice, sk_Bob, K_wrap, or RoomKey.
+    3. Forensically audits server logs and backend process memory both during and after the session.
+    4. Asserts that the server implementation never receives, retains, or exposes sk_Alice, sk_Bob, K_wrap, or RoomKey.
     """
     # Attach log spy to root and application loggers
     log_spy = LogCaptureHandler()
@@ -255,16 +256,17 @@ def test_server_mathematical_inability_to_decrypt():
     assert room_manager.has_room(room_id) is False
     assert room_id not in room_manager._rooms
 
-    # PROOF 5: Server Inability to Decrypt
-    # If the server process attempts to decrypt the captured WebSocket payload using ANY
-    # data/key available in its memory, state, or captured frames, the operation FAILS.
+    # PROOF 5: Verification that Server State is Insufficient for Decryption
+    # Demonstrates that the server process possesses no key material capable of decrypting
+    # the intercepted payload. Any attempt to decrypt or unwrap using data available to the server
+    # fails, confirming that decryption strictly depends on the client-held private keys.
     # The server possesses only:
     # - alice_pk_b64, bob_pk_b64 (uncompressed public curve points)
     # - wrapped_key (RoomKey encrypted under K_wrap)
     # - ciphertext (secret_text encrypted under RoomKey)
     # - room_id ("AUDIT99")
     #
-    # Test 5a: Attempting to decrypt the ciphertext directly with any data the server has (e.g. room_id hash) fails
+    # Test 5a: Attempting to decrypt the ciphertext with data derived from server state (e.g. room_id hash) fails
     server_derived_key = hashes.Hash(hashes.SHA256())
     server_derived_key.update(room_id.encode("utf-8"))
     server_fake_key = server_derived_key.finalize()

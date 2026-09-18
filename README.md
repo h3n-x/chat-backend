@@ -20,9 +20,9 @@
 
 A diferencia de arquitecturas tradicionales de chat o de la versión v1.0 (donde el servidor generaba claves simétricas y descifraba el contenido en tránsito), **Chat Anónimo v2.0 implementa una política estricta de Cero Confianza (*Zero-Knowledge Blind Relay*)**:
 
-1. **Incapacidad Criptográfica de Descifrado:** El servidor jamás genera, recibe, deduce ni almacena claves privadas ni simétricas. Solo enruta sobres opacos de ciphertext en Base64.
+1. **Diseño Blind Relay (Aislamiento de Claves):** El servidor jamás genera, recibe, deduce ni almacena claves privadas ni simétricas en su código o base de datos. Solo enruta sobres opacos de ciphertext en Base64 sin retener material criptográfico que permita descifrarlos.
 2. **Zero-Persistence Real:** No existe base de datos ni almacenamiento persistente de mensajes. Las salas y los identificadores efímeros residen exclusivamente en la memoria RAM y son purgados de inmediato en cuanto todos los participantes se desconectan.
-3. **Cero Exposición de Metadatos:** Los nombres originales de archivos, tipos MIME, remitentes y apodos viajan cifrados dentro del payload AEAD, invisibles para el servidor.
+3. **Cero Exposición de Metadatos de Aplicación:** Los nombres originales de archivos, tipos MIME, remitentes y apodos viajan cifrados dentro del payload AEAD, invisibles para el servidor.
 
 ---
 
@@ -40,7 +40,7 @@ A diferencia de arquitecturas tradicionales de chat o de la versión v1.0 (donde
 |   1. Valida esquema de frame WebSocket (Pydantic v2)                   |
 |   2. Aplica Rate Limiting deslizante por IP (30 msg/min, 5 conn/IP)     |
 |   3. Retransmite sobre opaco a sockets conectados a la sala "XYZ"       |
-|   4. JAMÁS inspecciona o descifra el contenido (Zero-Knowledge)         |
+|   4. JAMÁS inspecciona o descifra el contenido (Blind Relay)           |
 +------------------------------------+------------------------------------+
                                      |  Sobre Cifrado intacto
                                      v
@@ -50,9 +50,21 @@ A diferencia de arquitecturas tradicionales de chat o de la versión v1.0 (donde
 +-------------------------------------------------------------------------+
 ```
 
-### Límites de Seguridad (Threat Model)
-- **Mitiga:** Espionaje de red (ISP, sniffing Wi-Fi), administradores o atacantes con acceso root al servidor backend (no pueden descifrar mensajes ni archivos), ataques de inyección cruzada entre salas (mitigados con AAD en AES-GCM), y ataques de saturación de memoria (mitigados con streaming chunked de 15MB).
-- **Fuera de alcance:** Compromiso del dispositivo final del usuario (malware en el sistema operativo del cliente o keyloggers locales).
+### Límites de Seguridad del Modelo de Amenazas
+
+#### Lo que este sistema SÍ protege:
+- **Espionaje en tránsito:** Ataques pasivos de red (ISP, sniffing Wi-Fi, intermediarios no autorizados).
+- **Acceso no autorizado al servidor en operación normal:** La inspección de logs, buffers y memoria del proceso del servidor no expone claves privadas, claves simétricas ni texto plano (verificado en suite de pruebas).
+- **Inyección y retransmisión entre salas:** El uso de Datos Asociados Autenticados ($\text{AAD} = \text{"room:"} + room\_id$) garantiza que un mensaje capturado de una sala no pueda ser inyectado ni validado en otra.
+- **Saturación por memoria en subidas:** Streaming en chunks de 64 KB con corte estricto en **15 MB** (`HTTP 413`).
+
+#### Lo que este sistema NO protege (Límites Explícitos):
+> [!CAUTION]
+> - **Dispositivo final comprometido (Endpoint Security):** Si el navegador o el sistema operativo del usuario está infectado con malware, keyloggers, software espía o extensiones maliciosas de navegador con acceso al DOM o memoria, la seguridad del cifrado queda completamente invalidada a nivel local.
+> - **Omisión de la verificación SAS fuera de banda:** Si los participantes no comparan activamente el código de 4 palabras por un canal externo seguro (ej. llamada de voz o presencial), el protocolo es susceptible a ataques Man-in-the-Middle (MITM) activos donde un intermediario sustituya las claves públicas efímeras de ECDH.
+> - **Canal de distribución del enlace o código inicial:** Si el enlace directo con hash fragment (`#room=...&key=...`) o el código de sala se comparte a través de un canal inseguro (SMS, correo en texto plano, chat no cifrado), cualquier tercero que acceda al enlace obtendrá la clave de descifrado.
+> - **Metadatos de red y análisis de tráfico:** El servidor y los proveedores de infraestructura pueden observar las direcciones IP de origen, timestamps de conexión/desconexión, y volumen/frecuencia de paquetes. El sistema no implementa enrutamiento cebolla (Tor) ni ofuscación de tráfico de red.
+> - **Persistencia en la memoria del navegador:** Mientras la pestaña permanezca abierta, las claves simétricas residen en la RAM del proceso del navegador. Es responsabilidad del usuario pulsar "Salir" para purgar las claves del estado local.
 
 ---
 
@@ -119,8 +131,13 @@ app/security/rate_limiter.py      55      1    98%
 app/services/file_storage.py      76      7    91%
 app/services/room_manager.py      75     14    81%
 ------------------------------------------------------------
-TOTAL                            450     33    93%
 ```
+
+### 🔬 Auditoría de Aislamiento de Claves (`tests/test_server_inability.py`):
+El test `test_server_key_isolation_and_zero_retention` simula el intercambio completo entre Alice y Bob a través del router WebSocket real y audita forensicamente el proceso:
+- Verifica que el servidor no almacene, registre en logs ni retenga claves privadas (`sk_Alice`, `sk_Bob`), claves de envoltura (`K_wrap`), claves de sala (`RoomKey`) ni texto plano de mensajes.
+- Comprueba que tras la desconexión de los participantes, la sala se purga al 100% de la memoria RAM (*Zero-Persistence*).
+- Demuestra que con los datos que transitan por el servidor (puntos públicos y ciphertext opaco), descifrar el mensaje o desenvolver la clave de sala falla, ratificando el aislamiento del blind relay en operación normal.
 
 ---
 
