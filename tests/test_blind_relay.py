@@ -295,4 +295,28 @@ def test_ws_room_max_capacity(monkeypatch):
             assert exc_info.value.code == 1008
 
 
+def test_ws_typing_indicator_relay():
+    """Verify typing indicator frames are relayed between peers."""
+    client = TestClient(app)
+    with client.websocket_connect("/ws/TYPEROOM") as ws_a:
+        ws_a.receive_text()  # Drain room_welcome A
+        with client.websocket_connect("/ws/TYPEROOM") as ws_b:
+            ws_b.receive_text()  # Drain room_welcome B
+            ws_a.receive_text()  # Drain peer_joined
+
+            # Alice sends typing
+            ws_a.send_text(json.dumps({
+                "type": "typing",
+                "room_id": "TYPEROOM",
+                "is_typing": True,
+            }))
+
+            # Bob receives typing
+            frame = json.loads(ws_b.receive_text())
+            assert frame["type"] == "typing"
+            assert frame["room_id"] == "TYPEROOM"
+            assert frame["is_typing"] is True
+            assert "sender_id" in frame
+
+
 

@@ -36,8 +36,14 @@ class WSInboundPing(BaseModel):
     type: Literal["ping"]
 
 
+class WSInboundTyping(BaseModel):
+    type: Literal["typing"]
+    room_id: str = Field(..., min_length=4, max_length=16)
+    is_typing: bool = True
+
+
 InboundWSMessage = Annotated[
-    Union[WSInboundE2EEMessage, WSInboundKeyRequest, WSInboundKeyDelivery, WSInboundPing],
+    Union[WSInboundE2EEMessage, WSInboundKeyRequest, WSInboundKeyDelivery, WSInboundPing, WSInboundTyping],
     Field(discriminator="type"),
 ]
 
@@ -87,6 +93,13 @@ class WSOutboundPeerLeft(BaseModel):
     room_id: str
     peer_id: str
     participant_count: int
+
+
+class WSOutboundTyping(BaseModel):
+    type: Literal["typing"] = "typing"
+    room_id: str
+    sender_id: str
+    is_typing: bool = True
 
 
 class WSOutboundPong(BaseModel):

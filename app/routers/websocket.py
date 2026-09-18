@@ -15,11 +15,13 @@ from app.models.ws_messages import (
     WSInboundKeyDelivery,
     WSInboundKeyRequest,
     WSInboundPing,
+    WSInboundTyping,
     WSOutboundE2EEMessage,
     WSOutboundError,
     WSOutboundKeyDelivery,
     WSOutboundKeyRequest,
     WSOutboundPong,
+    WSOutboundTyping,
 )
 from app.routers.rooms import ROOM_ID_REGEX
 from app.security.rate_limiter import get_client_ip, rate_limiter
@@ -105,6 +107,16 @@ async def websocket_relay_endpoint(websocket: WebSocket, room_id: str):
             # 7. Route according to frame type
             if isinstance(parsed_msg, WSInboundPing):
                 await websocket.send_text(WSOutboundPong().model_dump_json())
+
+            elif isinstance(parsed_msg, WSInboundTyping):
+                if parsed_msg.room_id != room_id:
+                    continue
+                outbound = WSOutboundTyping(
+                    room_id=room_id,
+                    sender_id=client_id,
+                    is_typing=parsed_msg.is_typing,
+                ).model_dump_json()
+                await room_manager.broadcast_to_room(room_id, outbound, exclude_client_id=client_id)
 
             elif isinstance(parsed_msg, WSInboundE2EEMessage):
                 if parsed_msg.room_id != room_id:
