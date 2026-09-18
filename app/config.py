@@ -11,7 +11,7 @@ PORT = int(os.getenv("PORT", "8000"))
 
 # CORS Config
 # Stored as comma-separated origins in env var
-DEFAULT_ORIGINS = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+DEFAULT_ORIGINS = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000,https://chat-zk.netlify.app"
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", DEFAULT_ORIGINS).split(",")
