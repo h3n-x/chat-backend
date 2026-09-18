@@ -30,8 +30,16 @@ def test_e2ee_blind_relay_handshake_and_messaging():
 
     # Alice opens WebSocket
     with client.websocket_connect(f"/ws/{room_id}") as ws_alice:
+        alice_welcome = json.loads(ws_alice.receive_text())
+        assert alice_welcome["type"] == "room_welcome"
+        assert alice_welcome["participant_count"] == 1
+
         # Bob opens WebSocket
         with client.websocket_connect(f"/ws/{room_id}") as ws_bob:
+            bob_welcome = json.loads(ws_bob.receive_text())
+            assert bob_welcome["type"] == "room_welcome"
+            assert bob_welcome["participant_count"] == 2
+
             # Alice should receive peer_joined notification for Bob
             msg = json.loads(ws_alice.receive_text())
             assert msg["type"] == "peer_joined"
@@ -165,6 +173,8 @@ def test_ws_ping_pong():
     """Verify ping-pong keepalive works as expected."""
     client = TestClient(app)
     with client.websocket_connect("/ws/PINGRM") as ws:
+        welcome = json.loads(ws.receive_text())
+        assert welcome["type"] == "room_welcome"
         ws.send_text(json.dumps({"type": "ping"}))
         response = json.loads(ws.receive_text())
         assert response["type"] == "pong"
@@ -174,6 +184,8 @@ def test_ws_frame_validation():
     """Verify malformed frames return an error frame and don't crash the server."""
     client = TestClient(app)
     with client.websocket_connect("/ws/TESTVAL") as ws:
+        welcome = json.loads(ws.receive_text())
+        assert welcome["type"] == "room_welcome"
         # Invalid JSON
         ws.send_text("this-is-not-json")
         err = json.loads(ws.receive_text())
@@ -191,6 +203,8 @@ def test_ws_frame_too_large():
     """Verify frames larger than 64KB are rejected with an error frame."""
     client = TestClient(app)
     with client.websocket_connect("/ws/LARGEMSG") as ws:
+        welcome = json.loads(ws.receive_text())
+        assert welcome["type"] == "room_welcome"
         large_str = "A" * (65 * 1024)
         ws.send_text(large_str)
         err = json.loads(ws.receive_text())
@@ -202,6 +216,8 @@ def test_ws_message_rate_limit():
     """Verify sending more than RATE_LIMIT_WS_MESSAGES_PER_MINUTE triggers rate limit error."""
     client = TestClient(app)
     with client.websocket_connect("/ws/RATELIM") as ws:
+        welcome = json.loads(ws.receive_text())
+        assert welcome["type"] == "room_welcome"
         for _ in range(30):
             ws.send_text(json.dumps({"type": "ping"}))
             res = json.loads(ws.receive_text())
@@ -245,9 +261,10 @@ def test_ws_mismatched_room_discard():
     """Verify frames where payload room_id does not match the connected room are discarded."""
     client = TestClient(app)
     with client.websocket_connect("/ws/ROOM_A") as ws_a:
+        ws_a.receive_text()  # Drain room_welcome for A
         with client.websocket_connect("/ws/ROOM_A") as ws_b:
-            # Drain join message
-            ws_a.receive_text()
+            ws_b.receive_text()  # Drain room_welcome for B
+            ws_a.receive_text()  # Drain peer_joined for A
 
             # Send message with mismatched room_id
             mismatched_msg = {

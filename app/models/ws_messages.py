@@ -68,6 +68,13 @@ class WSOutboundKeyDelivery(BaseModel):
     iv: str
 
 
+class WSOutboundRoomWelcome(BaseModel):
+    type: Literal["room_welcome"] = "room_welcome"
+    room_id: str
+    peer_id: str
+    participant_count: int
+
+
 class WSOutboundPeerJoined(BaseModel):
     type: Literal["peer_joined"] = "peer_joined"
     room_id: str

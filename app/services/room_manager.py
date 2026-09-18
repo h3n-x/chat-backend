@@ -2,7 +2,11 @@ import logging
 from typing import Dict, Optional, Set
 from starlette.websockets import WebSocket, WebSocketState
 from app.config import MAX_PARTICIPANTS_PER_ROOM
-from app.models.ws_messages import WSOutboundPeerJoined, WSOutboundPeerLeft
+from app.models.ws_messages import (
+    WSOutboundPeerJoined,
+    WSOutboundPeerLeft,
+    WSOutboundRoomWelcome,
+)
 
 logger = logging.getLogger("chat.room_manager")
 
@@ -40,7 +44,15 @@ class RoomManager:
         participant_count = len(self._rooms[room_id])
         logger.info(f"Client {client_id} connected to room {room_id}. Total: {participant_count}")
 
-        # Notify peers about new participant
+        # 1. Send welcome status frame directly to the connecting client with current room state
+        welcome_msg = WSOutboundRoomWelcome(
+            room_id=room_id,
+            peer_id=client_id,
+            participant_count=participant_count,
+        ).model_dump_json()
+        await websocket.send_text(welcome_msg)
+
+        # 2. Notify peers about new participant
         join_msg = WSOutboundPeerJoined(
             room_id=room_id,
             peer_id=client_id,

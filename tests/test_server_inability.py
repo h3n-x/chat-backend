@@ -99,9 +99,18 @@ def test_server_key_isolation_and_zero_retention():
     client = TestClient(app)
 
     with client.websocket_connect(f"/ws/{room_id}") as ws_alice:
+        alice_welcome = json.loads(ws_alice.receive_text())
+        assert alice_welcome["type"] == "room_welcome"
+        assert alice_welcome["participant_count"] == 1
+
         with client.websocket_connect(f"/ws/{room_id}") as ws_bob:
+            bob_welcome = json.loads(ws_bob.receive_text())
+            assert bob_welcome["type"] == "room_welcome"
+            assert bob_welcome["participant_count"] == 2
+
             # Drain join message for Alice
             join_msg = json.loads(ws_alice.receive_text())
+            assert join_msg["type"] == "peer_joined"
             bob_peer_id = join_msg["peer_id"]
 
             # 1. Bob sends KEY_REQUEST over WebSocket
