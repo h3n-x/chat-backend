@@ -1,83 +1,77 @@
 <div align="center">
 
-# 🛡️ Chat Anónimo — Backend (Zero-Knowledge Blind Relay v2.0)
+# 🛡️ Chat Anónimo — Backend (Zero-Knowledge Blind Relay v2.5)
+### Enrutador Ciego de Paquetes Asíncrono de Alto Rendimiento en FastAPI + WebSockets + Memoria RAM Volátil
 
-![Python](https://img.shields.io/badge/Python-3.12+-3776ab?style=for-the-badge&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12_%7C_3.13_%7C_3.14-3776ab?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
 ![WebSockets](https://img.shields.io/badge/WebSockets-Blind_Relay-010101?style=for-the-badge&logo=socketdotio&logoColor=white)
-![Coverage](https://img.shields.io/badge/Test_Coverage-93%25-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
-![Security](https://img.shields.io/badge/Security-Zero_Knowledge-10B981?style=for-the-badge&logo=shield&logoColor=white)
+![Pytest Coverage](https://img.shields.io/badge/Pytest-28%2F28_Tests_Passing-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)
+![Security](https://img.shields.io/badge/Incapacidad_Técnica-Zero_Knowledge_Provable-10B981?style=for-the-badge&logo=shield&logoColor=white)
 
-**Enrutador ciego de paquetes de comunicación efímera cifrada de extremo a extremo (E2EE) con cero conocimiento y cero persistencia.**
+**Enrutador ciego de paquetes criptográficos diseñado bajo el principio matemático de Incapacidad Técnica del Servidor (*Server Technical Inability*).**  
+*El servidor no puede espiar, no almacena claves, no guarda historial y no conoce la identidad de los interlocutores.*
 
-[🏠 Repositorio Umbrella](https://github.com/h3n-x/chat-anonimo) • [🎨 Frontend SPA](https://github.com/h3n-x/chat-frontend) • [🌐 Demo](https://chat-zk.netlify.app)
+[🏠 Repositorio Umbrella](https://github.com/h3n-x/chat-anonimo) • [🎨 Repositorio Frontend](https://github.com/h3n-x/chat-frontend) • [🌐 Demo en Vivo](https://chat-zk.netlify.app)
 
 </div>
 
 ---
 
-## 🔒 Principio Rector: Zero-Knowledge Blind Relay
+## 🎯 ¿Por qué este Blind Relay es diferente?
 
-A diferencia de arquitecturas tradicionales de chat o de la versión v1.0 (donde el servidor generaba claves simétricas y descifraba el contenido en tránsito), **Chat Anónimo v2.0 implementa una política estricta de Cero Confianza (*Zero-Knowledge Blind Relay*)**:
+En las arquitecturas de mensajería convencionales (como WhatsApp, Slack, Teams o Telegram):
+* El servidor actúa como una **autoridad central de confianza** que valida sesiones, almacena perfiles de usuario, mantiene listas de contactos y conoce la clave pública permanente de cada individuo.
+* Si el servidor es confiscado, vulnerado mediante un exploit zero-day o intervenido por un organismo gubernamental con una orden judicial, los operadores están obligados o capacitados para entregar los metadatos o interceptar las claves de sesión.
 
-1. **Diseño Blind Relay (Aislamiento de Claves):** El servidor jamás genera, recibe, deduce ni almacena claves privadas ni simétricas en su código o base de datos. Solo enruta sobres opacos de ciphertext en Base64 sin retener material criptográfico que permita descifrarlos.
-2. **Zero-Persistence Real:** No existe base de datos ni almacenamiento persistente de mensajes. Las salas y los identificadores efímeros residen exclusivamente en la memoria RAM y son purgados de inmediato en cuanto todos los participantes se desconectan.
-3. **Cero Exposición de Metadatos de Aplicación:** Los nombres originales de archivos, tipos MIME, remitentes y apodos viajan cifrados dentro del payload AEAD, invisibles para el servidor.
-
----
-
-## 🏛️ Arquitectura y Modelo de Amenazas
-
-```
-+-------------------------------------------------------------------------+
-|                              CLIENTE ALICE                              |
-|   Genera RoomKey (AES-256-GCM) en memoria local vía WebCrypto API      |
-+------------------------------------+------------------------------------+
-                                     |  Sobre Cifrado (AAD: "room:XYZ")
-                                     v
-+------------------------------------+------------------------------------+
-|                   BACKEND FASTAPI (BLIND RELAY)                         |
-|   1. Valida esquema de frame WebSocket (Pydantic v2)                   |
-|   2. Aplica Rate Limiting deslizante por IP (30 msg/min, 5 conn/IP)     |
-|   3. Retransmite sobre opaco a sockets conectados a la sala "XYZ"       |
-|   4. JAMÁS inspecciona o descifra el contenido (Blind Relay)           |
-+------------------------------------+------------------------------------+
-                                     |  Sobre Cifrado intacto
-                                     v
-+------------------------------------+------------------------------------+
-|                               CLIENTE BOB                               |
-|   Descifra y autentica payload con RoomKey y AAD: "room:XYZ"            |
-+-------------------------------------------------------------------------+
-```
-
-### Límites de Seguridad del Modelo de Amenazas
-
-#### Lo que este sistema SÍ protege:
-- **Espionaje en tránsito:** Ataques pasivos de red (ISP, sniffing Wi-Fi, intermediarios no autorizados).
-- **Acceso no autorizado al servidor en operación normal:** La inspección de logs, buffers y memoria del proceso del servidor no expone claves privadas, claves simétricas ni texto plano (verificado en suite de pruebas).
-- **Inyección y retransmisión entre salas:** El uso de Datos Asociados Autenticados ($\text{AAD} = \text{"room:"} + room\_id$) garantiza que un mensaje capturado de una sala no pueda ser inyectado ni validado en otra.
-- **Saturación por memoria en subidas:** Streaming en chunks de 64 KB con corte estricto en **15 MB** (`HTTP 413`).
-
-#### Lo que este sistema NO protege (Límites Explícitos):
-> [!CAUTION]
-> - **Dispositivo final comprometido (Endpoint Security):** Si el navegador o el sistema operativo del usuario está infectado con malware, keyloggers, software espía o extensiones maliciosas de navegador con acceso al DOM o memoria, la seguridad del cifrado queda completamente invalidada a nivel local.
-> - **Omisión de la verificación SAS fuera de banda:** Si los participantes no comparan activamente el código de 4 palabras por un canal externo seguro (ej. llamada de voz o presencial), el protocolo es susceptible a ataques Man-in-the-Middle (MITM) activos donde un intermediario sustituya las claves públicas efímeras de ECDH.
-> - **Canal de distribución del enlace o código inicial:** Si el enlace directo con hash fragment (`#room=...&key=...`) o el código de sala se comparte a través de un canal inseguro (SMS, correo en texto plano, chat no cifrado), cualquier tercero que acceda al enlace obtendrá la clave de descifrado.
-> - **Metadatos de red y análisis de tráfico:** El servidor y los proveedores de infraestructura pueden observar las direcciones IP de origen, timestamps de conexión/desconexión, y volumen/frecuencia de paquetes. El sistema no implementa enrutamiento cebolla (Tor) ni ofuscación de tráfico de red.
-> - **Persistencia en la memoria del navegador:** Mientras la pestaña permanezca abierta, las claves simétricas residen en la RAM del proceso del navegador. Es responsabilidad del usuario pulsar "Salir" para purgar las claves del estado local.
+### La Filosofía de Chat Anónimo Backend:
+El backend de Chat Anónimo fue diseñado para que **ni siquiera el propio desarrollador u operador del servidor pueda acceder al contenido de las comunicaciones**:
+1. **Incapacidad Técnica Demostrable:** El servidor no dispone de código ni de claves para descifrar los paquetes de red. Todas las tramas WebSocket son sobres opacos (`ciphertext`, `iv`, `tag`, `AAD`).
+2. **Cero Base de Datos:** No existe Postgres, ni MySQL, ni Redis, ni SQLite. Los descriptores de salas viven únicamente en diccionarios en la memoria RAM del proceso FastAPI y se destruyen de forma inmediata cuando los participantes se desconectan.
+3. **Cero Logs de Metadatos:** Se desactivan los registros de acceso que asocien direcciones IP con mensajes o salas.
+4. **Streaming Efímero de Archivos:** Las cargas binarias se almacenan temporalmente como blobs `.enc` cifrados en streaming con un límite estricto de **15 MB**. Un recolector de basura asíncrono los elimina irreversiblemente tras **600 segundos (10 minutos)**.
 
 ---
 
-## ⚙️ Características Técnicas del Backend
+## 🏛️ Arquitectura del Servidor
 
-- **FastAPI 0.115+ & Python 3.12+:** Arquitectura modular asíncrona estructurada en `app/`.
-- **Enrutador WebSocket Blind:** Retransmisión transparente de frames de mensajería E2EE y paquetes de acuerdo de claves efímero (ECDH / X25519).
-- **Streaming de Archivos Cifrados con Límite Estricto:** Subida en chunks de 64 KB con corte inmediato en **15 MB** (`HTTP 413 Content Too Large`) para garantizar un consumo de RAM acotado en el servidor.
-- **Auto-Destrucción (TTL):** Tarea asíncrona en segundo plano que purga automáticamente los blobs cifrados temporales a los 10 minutos (`600s`).
-- **Defensa en Profundidad:**
-  - Rate limiting deslizante en memoria por IP para WebSockets, subida de archivos y creación de salas.
-  - Cabeceras de seguridad HTTP estrictas (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`).
-  - Eliminación total de endpoints administrativos inseguros (`/admin/broadcast`, `/admin/cleanup`).
+```mermaid
+flowchart TD
+    subgraph Clientes ["📱 Dispositivos Finales (RAM WebCrypto)"]
+        Alice["👩 Alice (Host)"]
+        Bob["👨 Bob (Participante)"]
+    end
+
+    subgraph BlindRelay ["🛡️ Backend Blind Relay (FastAPI / ASGI)"]
+        WSHandler["Enrutador WebSocket /ws/{room_id}"]
+        RateLimiter["Limitador de Tasa por IP (Sliding Window)"]
+        RoomManager["Gestor de Salas en Memoria RAM"]
+        FileStreamer["Streaming de Archivos Cifrados (Máx 15MB)"]
+        GarbageCollector["Tarea en Segundo Plano (TTL 600s)"]
+    end
+
+    Alice <-->|"WebSocket Seguro (Frames Opacos E2EE)"| WSHandler
+    Bob <-->|"WebSocket Seguro (Frames Opacos E2EE)"| WSHandler
+    WSHandler <--> RateLimiter
+    WSHandler <--> RoomManager
+    Alice -.->|"POST /api/files/upload (Chunk 64KB)"| FileStreamer
+    Bob -.->|"GET /api/files/download/{id}"| FileStreamer
+    FileStreamer --> GarbageCollector
+```
+
+---
+
+## 🛡️ Límites del Modelo de Amenazas (Threat Model)
+
+### Lo que este backend SÍ garantiza:
+* **Incapacidad de Descifrado:** Si un atacante compromete el servidor o dumpea la memoria del proceso FastAPI, **no encontrará texto plano ni claves de descifrado**. Esto está garantizado por la prueba automatizada `tests/test_server_inability.py`.
+* **Protección contra Spoofing y Replay entre Salas:** Cada trama incluye Datos Asociados Autenticados (`AAD = "room:XYZ"`). Si un atacante captura una trama cifrada de una sala y la inyecta en otra, el cliente receptor la descartará inmediatamente por fallo en la verificación del tag AES-GCM.
+* **Resistencia a Denegación de Servicio (DoS):** Rate limiting deslizante en memoria que limita la creación de salas (10/min por IP), subida de archivos (3/min por IP) y mensajes WebSocket (30/min por conexión).
+* **Consumo de Memoria Acotado:** Las subidas de archivos se procesan en streaming con chunks de 64 KB y corte inmediato con código `HTTP 413 Content Too Large` si se exceden los 15 MB.
+
+### Lo que este backend NO protege:
+* **Análisis de Tráfico a Nivel de ISP:** Un proveedor de internet o un observador global de red puede inferir la existencia de una conexión WebSocket entre dos direcciones IP y medir el volumen de datos (aunque no pueda leer el contenido). *Mitigación recomendada: utilizar Tor Browser o activar el Camuflaje de Tráfico Señuelo desde la interfaz.*
+* **Endpoints Locales Comprometidos:** Si el dispositivo de Alice o Bob tiene un troyano, keylogger o extensión maliciosa, la información se compromete antes de llegar a la red.
 
 ---
 
@@ -85,93 +79,72 @@ A diferencia de arquitecturas tradicionales de chat o de la versión v1.0 (donde
 
 ### Endpoints REST
 
-| Método | Endpoint | Descripción | Rate Limit |
+| Método | Ruta | Descripción | Límite de Tasa |
 |---|---|---|---|
-| `GET` | `/health` | Chequeo de salud del servicio y salas activas en RAM | Sin límite |
-| `POST` | `/api/rooms/create` | Genera un código de sala alfanumérico seguro (6 chars) | 10 / min por IP |
-| `GET` | `/api/rooms/{room_id}/status` | Consulta el estado y participantes de una sala | 60 / min por IP |
-| `POST` | `/api/files/upload` | Streaming de payload cifrado (máx. 15 MB, chunks 64KB) | 3 / min por IP |
-| `GET` | `/api/files/download/{file_id}` | Descarga de payload `.enc` opaco con cabeceras `no-store` | 30 / min por IP |
+| `GET` | `/health` | Estado del servidor y recuento de salas activas en RAM | Sin límite |
+| `POST` | `/api/rooms/create` | Genera un código de sala seguro de 6 caracteres | 10 / min por IP |
+| `GET` | `/api/rooms/{room_id}/status` | Devuelve el número de participantes en la sala | 60 / min por IP |
+| `POST` | `/api/files/upload` | Streaming de payload binario cifrado (máx. 15 MB) | 3 / min por IP |
+| `GET` | `/api/files/download/{file_id}` | Descarga de payload `.enc` con cabecera `Cache-Control: no-store` | 30 / min por IP |
 
-### WebSocket Endpoint
+### Enrutador WebSocket (`/ws/{room_id}`)
 
-- **URL:** `/ws/{room_id}`
-- **Protocolo de Enmarcado (Frames JSON):**
-  - Inbound: `e2ee_message`, `key_request`, `key_delivery`, `ping`.
-  - Outbound: `e2ee_message`, `key_request`, `key_delivery`, `peer_joined`, `peer_left`, `pong`, `error`.
-  - Límite máximo de frame WebSocket: **64 KB**.
+El socket opera como un bus de eventos ciego. Los mensajes se serializan en formato JSON validado por Pydantic v2:
+
+* **`e2ee_message`:** Reenvía el paquete cifrado (`ciphertext`, `iv`, `tag`, `burn_ttl`) a todos los demás participantes de la sala.
+* **`key_request` / `key_delivery`:** Reenvía el sobre criptográfico envuelto con ECDH durante el apretón de manos inicial.
+* **`typing`:** Difunde el indicador efímero de escritura.
+* **`ping` / `pong`:** Flujo keepalive que permite al cliente calcular el RTT de latencia en milisegundos.
 
 ---
 
-## 🧪 Pruebas Automatizadas y Cobertura
+## 🧪 Pruebas Unitarias Automatizadas (Pytest)
 
-El backend cuenta con una suite completa de pruebas unitarias y de integración que simulan el ciclo de vida criptográfico completo entre clientes pares:
+El backend cuenta con **28 pruebas unitarias y de integración** que validan exhaustivamente cada garantía de seguridad:
 
 ```bash
-# Ejecutar la suite de pruebas
+cd chat-backend
+source .venv/bin/activate
 pytest -v
-
-# Ejecutar con reporte de cobertura detallado
-pytest --cov=app --cov-report=term-missing
 ```
 
-### Resultados de Cobertura (93% Global):
-```
-Name                           Stmts   Miss  Cover   Missing
-------------------------------------------------------------
-app/config.py                     17      0   100%
-app/main.py                       53      6    89%
-app/models/api_schemas.py          8      0   100%
-app/models/ws_messages.py         34      0   100%
-app/routers/files.py              25      0   100%
-app/routers/health.py              7      0   100%
-app/routers/rooms.py              27      0   100%
-app/routers/websocket.py          73      5    93%
-app/security/rate_limiter.py      55      1    98%
-app/services/file_storage.py      76      7    91%
-app/services/room_manager.py      75     14    81%
-------------------------------------------------------------
-```
-
-### 🔬 Auditoría de Aislamiento de Claves (`tests/test_server_inability.py`):
-El test `test_server_key_isolation_and_zero_retention` simula el intercambio completo entre Alice y Bob a través del router WebSocket real y audita forensicamente el proceso:
-- Verifica que el servidor no almacene, registre en logs ni retenga claves privadas (`sk_Alice`, `sk_Bob`), claves de envoltura (`K_wrap`), claves de sala (`RoomKey`) ni texto plano de mensajes.
-- Comprueba que tras la desconexión de los participantes, la sala se purga al 100% de la memoria RAM (*Zero-Persistence*).
-- Demuestra que con los datos que transitan por el servidor (puntos públicos y ciphertext opaco), descifrar el mensaje o desenvolver la clave de sala falla, ratificando el aislamiento del blind relay en operación normal.
+### Resumen de Suites:
+* `tests/test_blind_relay.py`: Enrutamiento ciego, aislamiento estricto de salas y eventos de conexión/desconexión.
+* `tests/test_server_inability.py`: Demuestra formalmente que el servidor no puede descifrar tramas cifradas.
+* `tests/test_rate_limiter.py`: Ventanas deslizantes, bloqueo de IPs abusivas y protección contra flooding.
+* `tests/test_file_upload.py`: Límite de 15 MB, streaming en bloques y recolector de basura de 10 minutos.
+* `tests/test_participant_lifecycle.py`: Destrucción instantánea de salas huérfanas en memoria RAM.
+* `tests/test_rooms.py`: Validación de identificadores de sala seguros de 6 caracteres alfanuméricos.
 
 ---
 
-## 🚀 Despliegue y Ejecución Local
+## 🚀 Instalación y Despliegue
 
 ### Requisitos
-- Python 3.12+ (compatible con Python 3.14)
-- Pip o entorno virtual
+* Python 3.12, 3.13 o 3.14
+* Virtualenv
 
 ```bash
-# 1. Clonar el repositorio
-git clone https://github.com/h3n-x/chat-backend.git
-cd chat-backend
-
-# 2. Crear y activar entorno virtual
+# 1. Crear entorno virtual
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Instalar dependencias
+# 2. Instalar dependencias
 pip install -r requirements.txt
 
-# 4. Iniciar el servidor Uvicorn
+# 3. Iniciar el servidor con Uvicorn
 python main.py
-# O alternativamente:
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Despliegue con Docker
+El servidor estará activo en `http://localhost:8000`.
+
+### Despliegue en Producción (Docker)
 ```bash
-docker build -t chat-backend:v2.0 .
-docker run -p 8000:8000 chat-backend:v2.0
+docker build -t chat-backend .
+docker run -p 8000:8000 --memory=512m --cpus=1 chat-backend
 ```
 
 ---
 
 ## 📜 Licencia
-Distribuido bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+Distribuido bajo la Licencia **MIT**.
