@@ -186,64 +186,103 @@ def test_server_mathematical_inability_to_decrypt():
             )
             assert bob_decrypted == secret_bytes
 
+            # =========================================================================
+            # LIVE AUDIT: Inspect Server Memory During Active Communication
+            # =========================================================================
+            assert room_manager.has_room(room_id) is True
+            active_sockets = room_manager._rooms[room_id]
+            assert len(active_sockets) == 2
+
+            # Gather all data in the server's active room_manager, websocket objects, and ASGI scopes
+            live_server_state = repr(room_manager.__dict__)
+            for client_id, ws_obj in active_sockets.items():
+                live_server_state += f" {client_id}: {repr(ws_obj.__dict__)} scope: {repr(ws_obj.scope)}"
+
+            # 1. Assert Alice's private key does NOT exist in any server attribute during active session
+            assert alice_sk_raw not in live_server_state.encode("utf-8")
+            assert alice_sk_raw.hex() not in live_server_state
+
+            # 2. Assert Bob's private key does NOT exist in any server attribute during active session
+            assert bob_sk_raw not in live_server_state.encode("utf-8")
+            assert bob_sk_raw.hex() not in live_server_state
+
+            # 3. Assert derived wrapping key and RoomKey do NOT exist in any server attribute
+            assert room_key_raw not in live_server_state.encode("utf-8")
+            assert room_key_raw.hex() not in live_server_state
+            assert room_key_b64 not in live_server_state
+            assert k_wrap_alice not in live_server_state.encode("utf-8")
+            assert k_wrap_alice.hex() not in live_server_state
+
+            # 4. Assert message plaintext does NOT exist in any active server attribute
+            assert secret_text not in live_server_state
+            assert secret_bytes not in live_server_state.encode("utf-8")
+
     # Clean up log spy
     root_logger.removeHandler(log_spy)
 
     # =========================================================================
-    # FORENSIC AUDIT PHASE: Verify Server Inability Invariants
+    # FORENSIC AUDIT PHASE: 5 Explicit Verification Proofs
     # =========================================================================
 
-    # AUDIT CHECK 1: Log Inspection
-    # Ensure NO secret key, private key, wrapping key, or plaintext was logged
     combined_logs = log_spy.get_combined_log_text()
-    for name, secret in secret_blacklist.items():
-        if isinstance(secret, str):
-            assert secret not in combined_logs, (
-                f"SECURITY VIOLATION: Secret '{name}' leaked into server logs! Value: {secret}"
-            )
-        elif isinstance(secret, bytes):
-            assert secret.hex() not in combined_logs, (
-                f"SECURITY VIOLATION: Hex of secret '{name}' leaked into server logs!"
-            )
-
-    # AUDIT CHECK 2: Server State & Memory Inspection
-    # Verify that room_manager retained ZERO message content or keys in memory
-    assert room_manager.has_room(room_id) is False  # Empty room must be purged
-    assert room_id not in room_manager._rooms
-
-    # AUDIT CHECK 3: Adversarial Reconstruction Test
-    # Simulate an attacker with root access to the server who collects ALL frames
-    # and all data passing through the server process.
     server_knowledge_base = json.dumps(captured_server_frames)
 
-    # Assert secret text never appears anywhere in the captured server traffic
-    assert secret_text not in server_knowledge_base
-    assert secret_bytes not in server_knowledge_base.encode("utf-8")
-    assert room_key_b64 not in server_knowledge_base
-    assert room_key_raw.hex() not in server_knowledge_base
-    assert k_wrap_alice.hex() not in server_knowledge_base
+    # PROOF 1: Alice's private key does NOT exist in server memory, logs, or frames
+    assert alice_sk_raw not in combined_logs.encode("utf-8")
+    assert alice_sk_raw.hex() not in combined_logs
     assert alice_sk_raw.hex() not in server_knowledge_base
+
+    # PROOF 2: Bob's private key does NOT exist in server memory, logs, or frames
+    assert bob_sk_raw not in combined_logs.encode("utf-8")
+    assert bob_sk_raw.hex() not in combined_logs
     assert bob_sk_raw.hex() not in server_knowledge_base
 
-    # Mathematical Inability Proof:
-    # An attacker possessing only what the server saw has:
-    # 1. alice_pk_b64, bob_pk_b64 (public keys)
-    # 2. wrapped_key (ciphertext of RoomKey under K_wrap)
-    # 3. ciphertext (ciphertext of secret_text under RoomKey)
+    # PROOF 3: Derived wrapping key (K_wrap) & RoomKey do NOT exist in server memory, logs, or frames
+    assert room_key_raw not in combined_logs.encode("utf-8")
+    assert room_key_raw.hex() not in combined_logs
+    assert room_key_b64 not in combined_logs
+    assert room_key_raw.hex() not in server_knowledge_base
+    assert room_key_b64 not in server_knowledge_base
+    assert k_wrap_alice.hex() not in combined_logs
+    assert k_wrap_alice.hex() not in server_knowledge_base
+
+    # PROOF 4: Message plaintext does NOT exist in any buffer, log, or memory structure
+    assert secret_text not in combined_logs
+    assert secret_bytes not in combined_logs.encode("utf-8")
+    assert secret_text not in server_knowledge_base
+    assert secret_bytes not in server_knowledge_base.encode("utf-8")
+    # And verify zero-persistence post session (empty room purged immediately)
+    assert room_manager.has_room(room_id) is False
+    assert room_id not in room_manager._rooms
+
+    # PROOF 5: Server Inability to Decrypt
+    # If the server process attempts to decrypt the captured WebSocket payload using ANY
+    # data/key available in its memory, state, or captured frames, the operation FAILS.
+    # The server possesses only:
+    # - alice_pk_b64, bob_pk_b64 (uncompressed public curve points)
+    # - wrapped_key (RoomKey encrypted under K_wrap)
+    # - ciphertext (secret_text encrypted under RoomKey)
+    # - room_id ("AUDIT99")
     #
-    # Without solving the Elliptic Curve Diffie-Hellman Problem (ECDLP),
-    # the server cannot compute S = ECDH(sk_A, pk_B).
-    # To demonstrate this, any attempt to unwrap wrapped_key using an arbitrary key derived
-    # without sk_A or sk_B fails:
+    # Test 5a: Attempting to decrypt the ciphertext directly with any data the server has (e.g. room_id hash) fails
+    server_derived_key = hashes.Hash(hashes.SHA256())
+    server_derived_key.update(room_id.encode("utf-8"))
+    server_fake_key = server_derived_key.finalize()
+    with pytest.raises(Exception):
+        AESGCM(server_fake_key).decrypt(
+            msg_iv,
+            ciphertext_bytes,
+            aad,
+        )
+
+    # Test 5b: Attempting to unwrap the wrapped_key with any key derived without sk_A or sk_B fails
     fake_attacker_sk = ec.generate_private_key(ec.SECP256R1())
-    # Attacker tries ECDH with Bob's public key
     attacker_secret = fake_attacker_sk.exchange(ec.ECDH(), bob_pub_key)
     fake_wrap_key = derive_wrap_key(attacker_secret)
-
-    # Attempting to unwrap with fake key must fail with InvalidTag
     with pytest.raises(Exception):
         AESGCM(fake_wrap_key).decrypt(
             wrap_iv,
             wrapped_key_bytes,
             None,
         )
+
